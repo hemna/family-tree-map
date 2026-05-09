@@ -1,4 +1,6 @@
 import asyncio
+import json
+from pathlib import Path
 
 from fastapi import FastAPI, Form, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -19,6 +21,12 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 session_store = SessionStore(secret_key=settings.SECRET_KEY)
 geocoding_service = GeocodingService()
 
+# Static mode: load ancestors from JSON file if it exists and no API keys configured
+STATIC_ANCESTORS: list | None = None
+_ancestors_file = Path("ancestors.json")
+if _ancestors_file.exists() and not settings.FAMILYSEARCH_CLIENT_ID:
+    STATIC_ANCESTORS = json.loads(_ancestors_file.read_text())
+
 SESSION_COOKIE = "session_id"
 
 
@@ -35,6 +43,9 @@ def _get_session(request: Request) -> dict | None:
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
+    # If static mode with pre-loaded data, skip login and go straight to map
+    if STATIC_ANCESTORS is not None:
+        return RedirectResponse(url="/map")
     return templates.TemplateResponse(request, "index.html")
 
 
@@ -158,6 +169,12 @@ async def ancestry_status(request: Request):
 
 @app.get("/map", response_class=HTMLResponse)
 async def map_view(request: Request):
+    # Static mode: serve pre-loaded data without session
+    if STATIC_ANCESTORS is not None:
+        return templates.TemplateResponse(
+            request, "map.html", context={"ancestors": STATIC_ANCESTORS}
+        )
+
     session = _get_session(request)
     if not session:
         return RedirectResponse(url="/")
