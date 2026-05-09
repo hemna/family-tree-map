@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Loading Ancestry...{% endblock %}
+{% block body %}
+<div class="container center">
+    <h1>Fetching Your Ancestors</h1>
+    <p id="status-message">Starting...</p>
+    <div class="progress-bar">
+        <div class="progress-fill" id="progress-fill"></div>
+    </div>
+    <p id="error-message" class="error" style="display:none;"></p>
+    <a href="/select-lineage" id="retry-btn" class="btn" style="display:none;">Try Again</a>
+</div>
+<script>
+    const statusMsg = document.getElementById('status-message');
+    const errorMsg = document.getElementById('error-message');
+    const retryBtn = document.getElementById('retry-btn');
+
+    function poll() {
+        fetch('/api/ancestry-status')
+            .then(r => r.json())
+            .then(data => {
+                statusMsg.textContent = data.message;
+                if (data.status === 'done') {
+                    statusMsg.textContent = 'Complete! Loading map...';
+                    window.location.href = '/map';
+                } else if (data.status === 'error') {
+                    errorMsg.textContent = data.error_detail || 'An error occurred.';
+                    errorMsg.style.display = 'block';
+                    retryBtn.style.display = 'inline-block';
+                } else {
+                    setTimeout(poll, 2000);
+                }
+            })
+            .catch(() => setTimeout(poll, 3000));
+    }
+    setTimeout(poll, 1000);
+</script>
+{% endblock %}

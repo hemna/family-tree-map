@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Family Tree Map — Sign In{% endblock %}
+{% block body %}
+<div class="container center">
+    <h1>Family Tree Map & Timeline</h1>
+    <p>Visualize your ancestors on an interactive map with a timeline.</p>
+    <p>Sign in with your FamilySearch account to explore your family history geographically.</p>
+    {% if request.query_params.get("error") %}
+    <p class="error">Authentication failed. Please try again.</p>
+    {% endif %}
+    <a href="/login" class="btn">Sign in with FamilySearch</a>
+</div>
+{% endblock %}

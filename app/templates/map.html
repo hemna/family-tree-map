@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Family Tree Map{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/nouislider@15.7.1/dist/nouislider.min.css" />
+{% endblock %}
+{% block body %}
+<div id="map"></div>
+<div id="controls">
+    <span id="ancestor-count"></span>
+    <span class="legend">
+        <span class="legend-item"><span class="dot green"></span> Birth</span>
+        <span class="legend-item"><span class="dot red"></span> Death</span>
+    </span>
+    <label id="unknown-toggle">
+        <input type="checkbox" id="show-unknown" checked> Show unknown dates
+    </label>
+    <a href="/select-lineage" class="btn-small">Change Lineage</a>
+    <a href="/logout" class="btn-small">Logout</a>
+</div>
+<div id="timeline">
+    <div id="date-range">
+        <span id="range-start"></span> — <span id="range-end"></span>
+    </div>
+    <div id="slider"></div>
+</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/nouislider@15.7.1/dist/nouislider.min.js"></script>
+<script>
+    const ANCESTORS = {{ ancestors | tojson }};
+</script>
+<script src="/static/js/map.js"></script>
+{% endblock %}

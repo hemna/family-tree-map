@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Select Lineage{% endblock %}
+{% block body %}
+<div class="container center">
+    <h1>Welcome, {{ user_name }}</h1>
+    <p>Which side of your family would you like to explore?</p>
+
+    {% if error %}
+    <p class="error">{{ error }}</p>
+    {% elif parents %}
+    <form action="/fetch-ancestry" method="post" id="lineage-form">
+        <input type="hidden" name="parent_id" id="parent-id-field">
+        <input type="hidden" name="side" id="side-field">
+        {% for parent in parents %}
+        <label class="lineage-option">
+            <input type="radio" name="selection"
+                   data-parent-id="{{ parent.id }}"
+                   data-side="{{ 'paternal' if parent.gender == 'Male' else 'maternal' }}"
+                   required>
+            <span>{{ parent.name }} ({{ 'Father' if parent.gender == 'Male' else 'Mother' }})</span>
+        </label>
+        {% endfor %}
+        <button type="submit" class="btn">Explore This Lineage</button>
+    </form>
+    <script>
+        document.getElementById('lineage-form').addEventListener('submit', function(e) {
+            const selected = document.querySelector('input[name="selection"]:checked');
+            if (!selected) { e.preventDefault(); return; }
+            document.getElementById('parent-id-field').value = selected.dataset.parentId;
+            document.getElementById('side-field').value = selected.dataset.side;
+        });
+    </script>
+    {% endif %}
+</div>
+{% endblock %}
