@@ -1,0 +1,187 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f5f5f5;
+    color: #333;
+}
+
+.container {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.center {
+    text-align: center;
+    margin-top: 15vh;
+}
+
+h1 {
+    margin-bottom: 1rem;
+    color: #1a1a1a;
+}
+
+p {
+    margin-bottom: 1rem;
+    line-height: 1.6;
+}
+
+.btn {
+    display: inline-block;
+    padding: 0.75rem 2rem;
+    background: #2d6a4f;
+    color: white;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    border: none;
+    cursor: pointer;
+    margin-top: 1rem;
+}
+
+.btn:hover {
+    background: #1b4332;
+}
+
+.btn-small {
+    padding: 0.4rem 0.8rem;
+    background: #555;
+    color: white;
+    text-decoration: none;
+    border-radius: 4px;
+    font-size: 0.8rem;
+}
+
+.btn-small:hover {
+    background: #333;
+}
+
+.error {
+    color: #d00;
+    font-weight: bold;
+}
+
+.lineage-option {
+    display: block;
+    margin: 1rem 0;
+    padding: 1rem;
+    background: white;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+
+.lineage-option:has(input:checked) {
+    border-color: #2d6a4f;
+    background: #f0faf5;
+}
+
+.lineage-option input[type="radio"] {
+    margin-right: 0.5rem;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: #ddd;
+    border-radius: 4px;
+    margin: 1rem 0;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: #2d6a4f;
+    width: 0%;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+#map {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 80px;
+    z-index: 1;
+}
+
+#controls {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    z-index: 1000;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    font-size: 0.85rem;
+}
+
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.dot.green { background: #2d6a4f; }
+.dot.red { background: #c0392b; }
+
+#unknown-toggle {
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+#timeline {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    background: white;
+    border-top: 1px solid #ddd;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 0.5rem 2rem;
+}
+
+#date-range {
+    text-align: center;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+    font-weight: bold;
+}
+
+#slider {
+    margin: 0 1rem;
+}
+
+.noUi-connect {
+    background: #2d6a4f;
+}
+
+.noUi-handle {
+    border-radius: 50%;
+}
