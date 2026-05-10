@@ -1,0 +1,16 @@
+{
+  "people": [
+    {
+      "id": "walter",
+      "name": "Walter Boring IV",
+      "files": ["walter_paternal.json", "walter_maternal.json"],
+      "familysearch_id": "GQ6H-SM8"
+    },
+    {
+      "id": "wife",
+      "name": "Dana Bosiger",
+      "files": ["wife_paternal.json", "wife_maternal.json"],
+      "familysearch_id": "P8BZ-TSJ"
+    }
+  ]
+}

@@ -221,6 +221,7 @@ async def fetch_person(client: httpx.AsyncClient, person_id: str, token: str) ->
             f"{FS_API_BASE}/platform/tree/persons/{person_id}",
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             timeout=15.0,
+            follow_redirects=True,
         )
         if response.status_code != 200:
             return None
@@ -239,6 +240,7 @@ async def fetch_parents(client: httpx.AsyncClient, person_id: str, token: str) -
             f"{FS_API_BASE}/platform/tree/persons/{person_id}/parents",
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             timeout=15.0,
+            follow_redirects=True,
         )
         if response.status_code != 200:
             return []
@@ -286,34 +288,45 @@ def extract_event(person: dict, event_type: str) -> dict:
     return {"date": None, "place": None}
 
 
-async def scrape(token: str, side: str | None, max_ancestors: int, output_file: str):
+async def scrape(token: str, side: str | None, max_ancestors: int, output_file: str, person_id: str | None = None):
     """Main scraping function."""
     geocache: dict = {}
     ancestors = []
 
-    async with httpx.AsyncClient() as client:
-        # Get current user's person
-        print("Fetching your person record...")
-        response = await client.get(
-            f"{FS_API_BASE}/platform/tree/current-person",
-            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-            timeout=15.0,
-        )
-        if response.status_code != 200:
-            print(f"ERROR: Could not fetch current person (status {response.status_code})")
-            print("Your token may be invalid or expired.")
-            sys.exit(1)
+    async with httpx.AsyncClient(follow_redirects=True) as client:
+        if person_id:
+            # Start from a specific person
+            print(f"Fetching person {person_id}...")
+            person_data = await fetch_person(client, person_id, token)
+            if not person_data:
+                print(f"ERROR: Could not fetch person {person_id}")
+                sys.exit(1)
+            user_id = person_id
+            user_name = extract_name(person_data)
+            print(f"Starting from: {user_name} ({user_id})")
+        else:
+            # Get current user's person
+            print("Fetching your person record...")
+            response = await client.get(
+                f"{FS_API_BASE}/platform/tree/current-person",
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                timeout=15.0,
+            )
+            if response.status_code not in (200, 303):
+                print(f"ERROR: Could not fetch current person (status {response.status_code})")
+                print("Your token may be invalid or expired.")
+                sys.exit(1)
 
-        data = response.json()
-        persons = data.get("persons", [])
-        if not persons:
-            print("ERROR: No person data returned")
-            sys.exit(1)
+            data = response.json()
+            persons = data.get("persons", [])
+            if not persons:
+                print("ERROR: No person data returned")
+                sys.exit(1)
 
-        user_person = persons[0]
-        user_id = user_person.get("id")
-        user_name = extract_name(user_person)
-        print(f"Logged in as: {user_name} ({user_id})")
+            user_person = persons[0]
+            user_id = user_person.get("id")
+            user_name = extract_name(user_person)
+            print(f"Logged in as: {user_name} ({user_id})")
 
         # Get parents
         print("Fetching parents...")
@@ -321,6 +334,7 @@ async def scrape(token: str, side: str | None, max_ancestors: int, output_file: 
             f"{FS_API_BASE}/platform/tree/persons/{user_id}/parents",
             headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
             timeout=15.0,
+            follow_redirects=True,
         )
         if response.status_code != 200:
             print("ERROR: Could not fetch parents")
@@ -373,11 +387,13 @@ async def scrape(token: str, side: str | None, max_ancestors: int, output_file: 
         print()
 
         # BFS fetch ancestry
-        queue = [(selected_parent["id"], 1)]
+        queue = [(selected_parent["id"], 1, None)]  # (person_id, generation, child_id)
         visited = set()
+        output_path = Path(output_file)
+        cache_path = output_path.parent / "geocache.json"
 
         while queue and len(ancestors) < max_ancestors:
-            person_id, generation = queue.pop(0)
+            person_id, generation, child_id = queue.pop(0)
 
             if person_id in visited:
                 continue
@@ -403,6 +419,7 @@ async def scrape(token: str, side: str | None, max_ancestors: int, output_file: 
                 "relationship": compute_relationship_label(generation, gender, side),
                 "generation": generation,
                 "side": side,
+                "child_id": child_id,
                 "birth": {
                     "date_original": birth_info.get("date"),
                     "date_year": extract_year(birth_info.get("date")),
@@ -424,15 +441,22 @@ async def scrape(token: str, side: str | None, max_ancestors: int, output_file: 
             geocoded = sum(1 for a in ancestors
                           if (a["birth"]["lat"] is not None) or (a["death"]["lat"] is not None))
             print(f"  [{len(ancestors)}/{max_ancestors}] Gen {generation}: {name} "
-                  f"({ancestor['relationship']}) — {geocoded} geocoded")
+                  f"({ancestor['relationship']}) — {geocoded} geocoded", flush=True)
+
+            # Save incrementally every 100 ancestors
+            if len(ancestors) % 100 == 0:
+                output_path.write_text(json.dumps(ancestors, indent=2, ensure_ascii=False))
+                serializable_cache = {k: v for k, v in geocache.items() if v is not None}
+                cache_path.write_text(json.dumps(serializable_cache, indent=2, ensure_ascii=False))
+                print(f"    [saved {len(ancestors)} ancestors to disk]", flush=True)
 
             # Queue parents
             parent_ids = await fetch_parents(client, person_id, token)
             for pid in parent_ids:
                 if pid not in visited:
-                    queue.append((pid, generation + 1))
+                    queue.append((pid, generation + 1, person_id))
 
-    # Save to file
+    # Final save
     output_path = Path(output_file)
     output_path.write_text(json.dumps(ancestors, indent=2, ensure_ascii=False))
 
@@ -452,10 +476,11 @@ def main():
     parser = argparse.ArgumentParser(description="Scrape FamilySearch ancestry to JSON")
     parser.add_argument("--client-id", help="FamilySearch OAuth client ID")
     parser.add_argument("--token", help="Pre-existing access token (skip OAuth)")
+    parser.add_argument("--person-id", help="Start from a specific person ID instead of current user")
     parser.add_argument("--side", choices=["paternal", "maternal"],
                         help="Which side to fetch (prompts if not specified)")
-    parser.add_argument("--max", type=int, default=500,
-                        help="Maximum ancestors to fetch (default: 500)")
+    parser.add_argument("--max", type=int, default=99999,
+                        help="Maximum ancestors to fetch (default: no limit)")
     parser.add_argument("--output", "-o", default="ancestors.json",
                         help="Output JSON file (default: ancestors.json)")
 
@@ -476,7 +501,7 @@ def main():
     else:
         token = asyncio.run(get_token_via_oauth(args.client_id))
 
-    asyncio.run(scrape(token, args.side, args.max, args.output))
+    asyncio.run(scrape(token, args.side, args.max, args.output, args.person_id))
 
 
 if __name__ == "__main__":

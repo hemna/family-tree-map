@@ -1,22 +1,53 @@
 {% extends "base.html" %}
-{% block title %}Family Tree Map{% endblock %}
+{% block title %}Family Tree Map — {{ person_name }}{% endblock %}
 {% block head %}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
 <link rel="stylesheet" href="https://unpkg.com/nouislider@15.7.1/dist/nouislider.min.css" />
 {% endblock %}
 {% block body %}
 <div id="map"></div>
+<div id="lineage-panel" style="display:none;">
+    <div id="lineage-header">
+        <span id="lineage-title">Lineage</span>
+        <button id="lineage-close" onclick="document.getElementById('lineage-panel').style.display='none'">✕</button>
+    </div>
+    <div id="lineage-chain"></div>
+</div>
+<div id="scrape-bar" style="display:none;"></div>
+<div id="search-box">
+    <input type="text" id="search-input" placeholder="Search ancestors..." autocomplete="off">
+    <div id="search-results" style="display:none;"></div>
+</div>
 <div id="controls">
+    {% if static_mode and people | length > 1 %}
+    <select id="person-switcher" onchange="window.location.href='/map/'+this.value">
+        {% for pid, p in people.items() %}
+        <option value="{{ pid }}" {% if pid == current_person_id %}selected{% endif %}>
+            {{ p.name }}
+        </option>
+        {% endfor %}
+    </select>
+    {% endif %}
     <span id="ancestor-count"></span>
     <span class="legend">
         <span class="legend-item"><span class="dot green"></span> Birth</span>
         <span class="legend-item"><span class="dot red"></span> Death</span>
     </span>
-    <label id="unknown-toggle">
-        <input type="checkbox" id="show-unknown" checked> Show unknown dates
+    <label class="toggle-label">
+        <input type="checkbox" id="show-paternal" checked> Paternal
     </label>
+    <label class="toggle-label">
+        <input type="checkbox" id="show-maternal" checked> Maternal
+    </label>
+    <label class="toggle-label">
+        <input type="checkbox" id="show-unknown" checked> Unknown dates
+    </label>
+    {% if not static_mode %}
     <a href="/select-lineage" class="btn-small">Change Lineage</a>
     <a href="/logout" class="btn-small">Logout</a>
+    {% endif %}
 </div>
 <div id="timeline">
     <div id="date-range">
@@ -25,9 +56,10 @@
     <div id="slider"></div>
 </div>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 <script src="https://unpkg.com/nouislider@15.7.1/dist/nouislider.min.js"></script>
 <script>
-    const ANCESTORS = {{ ancestors | tojson }};
+    const CURRENT_PERSON_ID = "{{ current_person_id }}";
 </script>
-<script src="/static/js/map.js"></script>
+<script src="/static/js/map.js?v=13"></script>
 {% endblock %}

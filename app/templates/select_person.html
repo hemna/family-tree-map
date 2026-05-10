@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Family Tree Map — Select Person{% endblock %}
+{% block body %}
+<div class="container center">
+    <h1>Family Tree Map & Timeline</h1>
+    <p>Choose whose family tree to view:</p>
+    <div class="person-list">
+        {% for person_id, person in people.items() %}
+        <a href="/map/{{ person_id }}" class="person-card">
+            <h3>{{ person.name }}</h3>
+            <p>{{ person.count }} ancestors loaded</p>
+            <div class="scrape-status" id="status-{{ person_id }}"></div>
+        </a>
+        {% endfor %}
+        <a href="/map/common" class="person-card common-card">
+            <h3>Common Ancestors</h3>
+            <p>View ancestors shared between both trees</p>
+        </a>
+    </div>
+
+    <div class="scrape-panel" id="scrape-panel">
+        <h3>Scraping Progress</h3>
+        <div id="scrape-details"></div>
+    </div>
+</div>
+<script>
+    function updateStatus() {
+        fetch('/api/scrape-status')
+            .then(r => r.json())
+            .then(data => {
+                var detailsHtml = '';
+                var anyRunning = false;
+
+                // Group by person
+                var people = {};
+                for (var key in data) {
+                    var parts = key.split('_');
+                    var person = parts[0];
+                    var side = parts[1];
+                    if (!people[person]) people[person] = {};
+                    people[person][side] = data[key];
+                }
+
+                for (var person in people) {
+                    var sides = people[person];
+                    var totalCount = 0;
+                    var lines = [];
+
+                    for (var side in sides) {
+                        var s = sides[side];
+                        totalCount += s.count;
+                        var icon = '';
+                        if (s.status === 'running') { icon = '⏳'; anyRunning = true; }
+                        else if (s.status === 'done') { icon = '✓'; }
+                        else if (s.status === 'stopped') { icon = '⏹'; }
+                        else { icon = '—'; }
+
+                        lines.push(icon + ' ' + side + ': ' + s.count + ' ancestors' +
+                            (s.status === 'running' ? ' (fetching...)' : s.status === 'done' ? ' (complete)' : ''));
+                    }
+
+                    detailsHtml += '<div class="scrape-person">';
+                    detailsHtml += '<strong>' + person + '</strong><br>';
+                    detailsHtml += lines.join('<br>');
+                    detailsHtml += '</div>';
+
+                    // Update card status
+                    var statusEl = document.getElementById('status-' + person);
+                    if (statusEl) {
+                        var running = Object.values(sides).some(function(s) { return s.status === 'running'; });
+                        if (running) {
+                            statusEl.innerHTML = '<span class="status-badge running">Scraping... ' + totalCount + ' found</span>';
+                        }
+                    }
+                }
+
+                document.getElementById('scrape-details').innerHTML = detailsHtml;
+                document.getElementById('scrape-panel').style.display = anyRunning ? 'block' : 'none';
+
+                if (anyRunning) {
+                    setTimeout(updateStatus, 3000);
+                }
+            })
+            .catch(function() { setTimeout(updateStatus, 5000); });
+    }
+    updateStatus();
+</script>
+{% endblock %}

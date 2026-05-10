@@ -5,3 +5,14 @@ __pycache__/
 .env
 dist/
 build/
+
+# Scraped data (personal family data)
+ancestors*.json
+data/*.json
+!data/manifest.json
+geocache.db
+geocache.json
+family_tree_report.md
+
+# Scraper logs
+scrape_*.log
