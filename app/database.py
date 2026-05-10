@@ -13,9 +13,10 @@ DB_PATH = Path("data/family_tree.db")
 
 def get_connection(db_path: Path = DB_PATH) -> sqlite3.Connection:
     """Get a database connection with row factory enabled."""
-    conn = sqlite3.connect(str(db_path))
+    conn = sqlite3.connect(str(db_path), timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")  # Better concurrent read/write
+    conn.execute("PRAGMA busy_timeout=30000")  # Wait up to 30s for locks
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
