@@ -1,20 +1,15 @@
 #!/usr/bin/env python3
 """
-Scrape ancestry data from FamilySearch and save to JSON.
+Scrape ancestry data from FamilySearch and save to SQLite database.
 
 This script:
-1. Starts a tiny local HTTP server
-2. Opens your browser to FamilySearch OAuth login
-3. Captures the auth token after you log in
-4. Fetches your ancestry recursively
-5. Geocodes places
-6. Saves everything to ancestors.json
+1. Authenticates with FamilySearch (OAuth or manual token)
+2. Fetches your ancestry recursively
+3. Geocodes places
+4. Saves each ancestor directly to SQLite as it's fetched
 
 Usage:
-    python scrape_ancestry.py --client-id YOUR_CLIENT_ID [--side paternal|maternal] [--max 500]
-
-If you don't have a client ID yet, you can use --token YOUR_TOKEN to skip OAuth
-and provide a token you grabbed from a browser session manually.
+    python scrape_ancestry.py --token YOUR_TOKEN --person-id PERSON_ID --side paternal
 
 To get a token manually:
     1. Log into familysearch.org
@@ -34,6 +29,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
+
+sys.path.insert(0, str(Path(__file__).parent))
+from app.database import init_db, get_connection, upsert_person, upsert_ancestor, DB_PATH
 
 # FamilySearch API base URLs
 FS_API_BASE = "https://api.familysearch.org"
@@ -291,7 +289,7 @@ def extract_event(person: dict, event_type: str) -> dict:
 async def scrape(token: str, side: str | None, max_ancestors: int, output_file: str, person_id: str | None = None):
     """Main scraping function."""
     geocache: dict = {}
-    ancestors = []
+    person_id_arg = person_id
 
     async with httpx.AsyncClient(follow_redirects=True) as client:
         if person_id:
@@ -386,13 +384,30 @@ async def scrape(token: str, side: str | None, max_ancestors: int, output_file: 
         print(f"Max ancestors: {max_ancestors}")
         print()
 
+        # Initialize database
+        init_db()
+        db_conn = get_connection()
+        upsert_person(db_conn, person_id_arg or "self", user_name, user_id)
+        db_person_id = person_id_arg or "self"  # key in the people table
+
+        # Determine the person key for the DB from the manifest
+        # Try to match by familysearch_id
+        manifest_file = Path("data/manifest.json")
+        if manifest_file.exists():
+            manifest = json.loads(manifest_file.read_text())
+            for p in manifest.get("people", []):
+                if p.get("familysearch_id") == user_id:
+                    db_person_id = p["id"]
+                    upsert_person(db_conn, db_person_id, p["name"], user_id)
+                    break
+
         # BFS fetch ancestry
         queue = [(selected_parent["id"], 1, None)]  # (person_id, generation, child_id)
         visited = set()
-        output_path = Path(output_file)
-        cache_path = output_path.parent / "geocache.json"
+        count = 0
+        geocoded_count = 0
 
-        while queue and len(ancestors) < max_ancestors:
+        while queue and count < max_ancestors:
             person_id, generation, child_id = queue.pop(0)
 
             if person_id in visited:
@@ -436,19 +451,20 @@ async def scrape(token: str, side: str | None, max_ancestors: int, output_file: 
                 },
                 "familysearch_url": f"https://www.familysearch.org/tree/person/details/{person_id}",
             }
-            ancestors.append(ancestor)
 
-            geocoded = sum(1 for a in ancestors
-                          if (a["birth"]["lat"] is not None) or (a["death"]["lat"] is not None))
-            print(f"  [{len(ancestors)}/{max_ancestors}] Gen {generation}: {name} "
-                  f"({ancestor['relationship']}) — {geocoded} geocoded", flush=True)
+            # Insert directly into SQLite
+            upsert_ancestor(db_conn, db_person_id, ancestor)
+            count += 1
 
-            # Save incrementally every 100 ancestors
-            if len(ancestors) % 100 == 0:
-                output_path.write_text(json.dumps(ancestors, indent=2, ensure_ascii=False))
-                serializable_cache = {k: v for k, v in geocache.items() if v is not None}
-                cache_path.write_text(json.dumps(serializable_cache, indent=2, ensure_ascii=False))
-                print(f"    [saved {len(ancestors)} ancestors to disk]", flush=True)
+            if birth_coords or death_coords:
+                geocoded_count += 1
+
+            # Commit every 50 records for performance
+            if count % 50 == 0:
+                db_conn.commit()
+
+            print(f"  [{count}/{max_ancestors}] Gen {generation}: {name} "
+                  f"({ancestor['relationship']}) — {geocoded_count} geocoded", flush=True)
 
             # Queue parents
             parent_ids = await fetch_parents(client, person_id, token)
@@ -456,20 +472,12 @@ async def scrape(token: str, side: str | None, max_ancestors: int, output_file: 
                 if pid not in visited:
                     queue.append((pid, generation + 1, person_id))
 
-    # Final save
-    output_path = Path(output_file)
-    output_path.write_text(json.dumps(ancestors, indent=2, ensure_ascii=False))
+    # Final commit
+    db_conn.commit()
+    db_conn.close()
 
-    geocoded_count = sum(1 for a in ancestors
-                        if a["birth"]["lat"] is not None or a["death"]["lat"] is not None)
-    print(f"\nDone! Found {len(ancestors)} ancestors, {geocoded_count} with map locations.")
-    print(f"Saved to: {output_path.resolve()}")
-
-    # Also save geocache for reuse
-    cache_path = output_path.parent / "geocache.json"
-    serializable_cache = {k: v for k, v in geocache.items() if v is not None}
-    cache_path.write_text(json.dumps(serializable_cache, indent=2, ensure_ascii=False))
-    print(f"Geocache saved to: {cache_path.resolve()} ({len(serializable_cache)} entries)")
+    print(f"\nDone! Found {count} ancestors, {geocoded_count} with map locations.")
+    print(f"Saved to database: {DB_PATH.resolve()}")
 
 
 def main():
