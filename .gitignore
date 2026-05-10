@@ -9,6 +9,7 @@ build/
 # Scraped data (personal family data)
 ancestors*.json
 data/*.json
+data/*.db
 !data/manifest.json
 geocache.db
 geocache.json

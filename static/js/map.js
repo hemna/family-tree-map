@@ -491,7 +491,7 @@
 
     searchInput.addEventListener('input', function() {
         if (searchTimeout) clearTimeout(searchTimeout);
-        var query = searchInput.value.trim().toLowerCase();
+        var query = searchInput.value.trim();
 
         if (query.length < 2) {
             searchResults.style.display = 'none';
@@ -499,39 +499,34 @@
         }
 
         searchTimeout = setTimeout(function() {
-            var matches = [];
-            for (var i = 0; i < ANCESTORS.length && matches.length < 15; i++) {
-                var a = ANCESTORS[i];
-                if (a.name.toLowerCase().indexOf(query) !== -1) {
-                    matches.push(a);
-                }
-            }
+            fetch('/api/search/' + CURRENT_PERSON_ID + '?q=' + encodeURIComponent(query) + '&limit=15')
+                .then(function(r) { return r.json(); })
+                .then(function(matches) {
+                    if (matches.length === 0) {
+                        searchResults.innerHTML = '<div class="search-result-item"><span class="search-result-detail">No results</span></div>';
+                        searchResults.style.display = 'block';
+                        return;
+                    }
 
-            if (matches.length === 0) {
-                searchResults.innerHTML = '<div class="search-result-item"><span class="search-result-detail">No results</span></div>';
-                searchResults.style.display = 'block';
-                return;
-            }
+                    var html = '';
+                    matches.forEach(function(a) {
+                        var birthInfo = a.birth && a.birth.date_original ? 'b. ' + a.birth.date_original : '';
+                        var placeInfo = a.birth && a.birth.place ? a.birth.place : '';
+                        var rel = (a.relationship || '').replace(/<br>/g, ' / ').replace(/<[^>]*>/g, '');
+                        var detail = [rel, birthInfo, placeInfo].filter(Boolean).join(' · ');
 
-            var html = '';
-            matches.forEach(function(a) {
-                var birthInfo = a.birth && a.birth.date_original ? 'b. ' + a.birth.date_original : '';
-                var placeInfo = a.birth && a.birth.place ? a.birth.place : '';
-                var rel = (a.relationship || '').replace(/<br>/g, ' / ').replace(/<[^>]*>/g, '');
-                var detail = [rel, birthInfo, placeInfo].filter(Boolean).join(' · ');
+                        html += '<div class="search-result-item" data-id="' + a.id + '">';
+                        html += '<div class="search-result-name">' + a.name + '</div>';
+                        html += '<div class="search-result-detail">' + detail + '</div>';
+                        html += '</div>';
+                    });
 
-                html += '<div class="search-result-item" data-id="' + a.id + '">';
-                html += '<div class="search-result-name">' + a.name + '</div>';
-                html += '<div class="search-result-detail">' + detail + '</div>';
-                html += '</div>';
-            });
+                    searchResults.innerHTML = html;
+                    searchResults.style.display = 'block';
 
-            searchResults.innerHTML = html;
-            searchResults.style.display = 'block';
-
-            // Add click handlers
-            var items = searchResults.querySelectorAll('.search-result-item');
-            items.forEach(function(item) {
+                    // Add click handlers
+                    var items = searchResults.querySelectorAll('.search-result-item');
+                    items.forEach(function(item) {
                 item.addEventListener('click', function() {
                     var ancestorId = item.getAttribute('data-id');
                     var ancestor = ancestorById[ancestorId];
@@ -569,6 +564,7 @@
                     searchInput.value = ancestor.name;
                 });
             });
+                });  // end .then(matches)
         }, 150);
     });
 
