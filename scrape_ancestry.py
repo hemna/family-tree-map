@@ -31,7 +31,10 @@ from urllib.parse import parse_qs, urlencode, urlparse
 import httpx
 
 sys.path.insert(0, str(Path(__file__).parent))
-from app.database import init_db, get_connection, upsert_person, upsert_ancestor, DB_PATH
+from app.database import (
+    init_db, get_connection, upsert_person, upsert_ancestor,
+    upsert_spouse, upsert_sibling, insert_fact, insert_source, DB_PATH,
+)
 
 # FamilySearch API base URLs
 FS_API_BASE = "https://api.familysearch.org"
@@ -286,6 +289,148 @@ def extract_event(person: dict, event_type: str) -> dict:
     return {"date": None, "place": None}
 
 
+def extract_all_facts(person: dict) -> list[dict]:
+    """Extract all facts (occupations, residences, military, etc.) excluding birth/death."""
+    skip_types = {"http://gedcomx.org/Birth", "http://gedcomx.org/Death"}
+    facts = []
+    for fact in person.get("facts", []):
+        ftype = fact.get("type", "")
+        if ftype in skip_types:
+            continue
+        date_obj = fact.get("date", {})
+        place_obj = fact.get("place", {})
+        # Clean up the type name
+        type_name = ftype.split("/")[-1] if "/" in ftype else ftype
+        if ftype.startswith("data:,"):
+            type_name = ftype.replace("data:,", "").replace("%20", " ")
+        facts.append({
+            "type": type_name,
+            "date": date_obj.get("original") if date_obj else None,
+            "place": place_obj.get("original") if place_obj else None,
+            "value": fact.get("value"),
+        })
+    return facts
+
+
+def extract_spouses_and_children(person: dict) -> tuple[list[dict], list[str]]:
+    """Extract spouse IDs and children IDs from display.familiesAsParent."""
+    display = person.get("display", {})
+    families = display.get("familiesAsParent", [])
+    person_id = person.get("id", "")
+
+    spouses = []
+    all_children = []
+    for fam in families:
+        # Determine which parent is the spouse (not this person)
+        p1 = fam.get("parent1", {})
+        p2 = fam.get("parent2", {})
+        spouse_id = None
+        if p1.get("resourceId") == person_id:
+            spouse_id = p2.get("resourceId")
+        elif p2.get("resourceId") == person_id:
+            spouse_id = p1.get("resourceId")
+        else:
+            # Try both
+            spouse_id = p2.get("resourceId") or p1.get("resourceId")
+
+        if spouse_id and spouse_id != person_id:
+            spouses.append({"id": spouse_id})
+
+        for child in fam.get("children", []):
+            cid = child.get("resourceId")
+            if cid:
+                all_children.append(cid)
+
+    return spouses, all_children
+
+
+def extract_siblings(person: dict) -> list[str]:
+    """Extract sibling IDs from display.familiesAsChild."""
+    display = person.get("display", {})
+    families = display.get("familiesAsChild", [])
+    person_id = person.get("id", "")
+
+    siblings = []
+    for fam in families:
+        for child in fam.get("children", []):
+            cid = child.get("resourceId")
+            if cid and cid != person_id:
+                siblings.append(cid)
+    return siblings
+
+
+async def fetch_spouse_details(client: httpx.AsyncClient, person_id: str, token: str) -> list[dict]:
+    """Fetch spouse relationships with marriage details."""
+    try:
+        response = await client.get(
+            f"{FS_API_BASE}/platform/tree/persons/{person_id}/spouses",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            timeout=15.0,
+            follow_redirects=True,
+        )
+        if response.status_code != 200:
+            return []
+        data = response.json()
+
+        # Extract person names
+        person_names = {}
+        for p in data.get("persons", []):
+            person_names[p.get("id")] = extract_name(p)
+
+        # Extract relationships with marriage facts
+        results = []
+        for rel in data.get("relationships", []):
+            p1 = rel.get("person1", {}).get("resourceId")
+            p2 = rel.get("person2", {}).get("resourceId")
+            spouse_id = p2 if p1 == person_id else p1
+            spouse_name = person_names.get(spouse_id, "Unknown")
+
+            marriage_date = None
+            marriage_place = None
+            for fact in rel.get("facts", []):
+                if fact.get("type") == "http://gedcomx.org/Marriage":
+                    date_obj = fact.get("date", {})
+                    place_obj = fact.get("place", {})
+                    marriage_date = date_obj.get("original") if date_obj else None
+                    marriage_place = place_obj.get("original") if place_obj else None
+                    break
+
+            results.append({
+                "spouse_id": spouse_id,
+                "spouse_name": spouse_name,
+                "marriage_date": marriage_date,
+                "marriage_place": marriage_place,
+            })
+        return results
+    except Exception:
+        return []
+
+
+async def fetch_sources(client: httpx.AsyncClient, person_id: str, token: str) -> list[dict]:
+    """Fetch source descriptions attached to a person."""
+    try:
+        response = await client.get(
+            f"{FS_API_BASE}/platform/tree/persons/{person_id}/sources",
+            headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+            timeout=15.0,
+            follow_redirects=True,
+        )
+        if response.status_code != 200:
+            return []
+        data = response.json()
+
+        sources = []
+        for sd in data.get("sourceDescriptions", []):
+            sources.append({
+                "title": sd.get("titles", [{}])[0].get("value") if sd.get("titles") else sd.get("citation"),
+                "citation": sd.get("citation"),
+                "url": sd.get("about"),
+            })
+        return sources
+    except Exception:
+        return []
+
+
 async def scrape(token: str, side: str | None, max_ancestors: int, output_file: str, person_id: str | None = None):
     """Main scraping function."""
     geocache: dict = {}
@@ -458,6 +603,31 @@ async def scrape(token: str, side: str | None, max_ancestors: int, output_file: 
 
             if birth_coords or death_coords:
                 geocoded_count += 1
+
+            # Extract and store additional data
+            # Facts (occupations, residences, military, etc.)
+            all_facts = extract_all_facts(person_data)
+            for fact in all_facts:
+                insert_fact(db_conn, db_person_id, person_id,
+                           fact["type"], fact["date"],
+                           extract_year(fact["date"]),
+                           fact["place"], fact["value"])
+
+            # Siblings
+            sibling_ids = extract_siblings(person_data)
+            for sid in sibling_ids:
+                upsert_sibling(db_conn, db_person_id, person_id, sid)
+
+            # Spouses (fetch detailed marriage info every 5th ancestor to avoid rate limits)
+            spouse_infos, _ = extract_spouses_and_children(person_data)
+            if spouse_infos:
+                spouse_details = await fetch_spouse_details(client, person_id, token)
+                for sp in spouse_details:
+                    upsert_spouse(db_conn, db_person_id, person_id,
+                                 sp["spouse_id"], sp["spouse_name"],
+                                 sp["marriage_date"],
+                                 extract_year(sp["marriage_date"]),
+                                 sp["marriage_place"])
 
             # Commit every 50 records for performance
             if count % 50 == 0:

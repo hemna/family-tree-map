@@ -62,6 +62,67 @@ def init_db(db_path: Path = DB_PATH) -> None:
         CREATE INDEX IF NOT EXISTS idx_ancestors_generation ON ancestors(person_id, generation);
         CREATE INDEX IF NOT EXISTS idx_ancestors_child_id ON ancestors(child_id, person_id);
 
+        -- Spouses and marriages
+        CREATE TABLE IF NOT EXISTS spouses (
+            ancestor_id TEXT NOT NULL,
+            person_id TEXT NOT NULL,
+            spouse_id TEXT,
+            spouse_name TEXT,
+            marriage_date_original TEXT,
+            marriage_date_year INTEGER,
+            marriage_place TEXT,
+            marriage_lat REAL,
+            marriage_lng REAL,
+            PRIMARY KEY (ancestor_id, person_id, spouse_id),
+            FOREIGN KEY (ancestor_id, person_id) REFERENCES ancestors(id, person_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_spouses_person ON spouses(person_id);
+        CREATE INDEX IF NOT EXISTS idx_spouses_ancestor ON spouses(ancestor_id, person_id);
+
+        -- Siblings (children in the same family)
+        CREATE TABLE IF NOT EXISTS siblings (
+            ancestor_id TEXT NOT NULL,
+            person_id TEXT NOT NULL,
+            sibling_id TEXT NOT NULL,
+            sibling_name TEXT,
+            PRIMARY KEY (ancestor_id, person_id, sibling_id),
+            FOREIGN KEY (ancestor_id, person_id) REFERENCES ancestors(id, person_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_siblings_ancestor ON siblings(ancestor_id, person_id);
+
+        -- Facts (occupations, residences, military, etc.)
+        CREATE TABLE IF NOT EXISTS facts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ancestor_id TEXT NOT NULL,
+            person_id TEXT NOT NULL,
+            fact_type TEXT NOT NULL,
+            date_original TEXT,
+            date_year INTEGER,
+            place TEXT,
+            value TEXT,
+            FOREIGN KEY (ancestor_id, person_id) REFERENCES ancestors(id, person_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_facts_ancestor ON facts(ancestor_id, person_id);
+        CREATE INDEX IF NOT EXISTS idx_facts_type ON facts(fact_type);
+
+        -- Source records attached to persons
+        CREATE TABLE IF NOT EXISTS sources (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            ancestor_id TEXT NOT NULL,
+            person_id TEXT NOT NULL,
+            title TEXT,
+            citation TEXT,
+            record_type TEXT,
+            url TEXT,
+            FOREIGN KEY (ancestor_id, person_id) REFERENCES ancestors(id, person_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_sources_ancestor ON sources(ancestor_id, person_id);
+
+        -- Geocoding cache
         CREATE TABLE IF NOT EXISTS geocache (
             place_string TEXT PRIMARY KEY,
             lat REAL NOT NULL,
@@ -123,6 +184,69 @@ def bulk_upsert_ancestors(conn: sqlite3.Connection, person_id: str, ancestors: l
     for ancestor in ancestors:
         upsert_ancestor(conn, person_id, ancestor)
     conn.commit()
+
+
+def upsert_spouse(conn: sqlite3.Connection, person_id: str, ancestor_id: str,
+                  spouse_id: str, spouse_name: str,
+                  marriage_date: str | None = None, marriage_year: int | None = None,
+                  marriage_place: str | None = None,
+                  marriage_lat: float | None = None, marriage_lng: float | None = None) -> None:
+    """Insert or update a spouse/marriage record."""
+    conn.execute(
+        """INSERT OR REPLACE INTO spouses
+           (ancestor_id, person_id, spouse_id, spouse_name,
+            marriage_date_original, marriage_date_year, marriage_place, marriage_lat, marriage_lng)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+        (ancestor_id, person_id, spouse_id, spouse_name,
+         marriage_date, marriage_year, marriage_place, marriage_lat, marriage_lng),
+    )
+
+
+def upsert_sibling(conn: sqlite3.Connection, person_id: str, ancestor_id: str,
+                   sibling_id: str, sibling_name: str | None = None) -> None:
+    """Insert or update a sibling record."""
+    conn.execute(
+        """INSERT OR REPLACE INTO siblings
+           (ancestor_id, person_id, sibling_id, sibling_name)
+           VALUES (?, ?, ?, ?)""",
+        (ancestor_id, person_id, sibling_id, sibling_name),
+    )
+
+
+def insert_fact(conn: sqlite3.Connection, person_id: str, ancestor_id: str,
+                fact_type: str, date_original: str | None = None,
+                date_year: int | None = None, place: str | None = None,
+                value: str | None = None) -> None:
+    """Insert a fact record (occupation, residence, military, etc.)."""
+    # Avoid duplicates by checking if same fact already exists
+    existing = conn.execute(
+        """SELECT id FROM facts WHERE ancestor_id = ? AND person_id = ?
+           AND fact_type = ? AND COALESCE(date_original,'') = COALESCE(?,'')""",
+        (ancestor_id, person_id, fact_type, date_original),
+    ).fetchone()
+    if not existing:
+        conn.execute(
+            """INSERT INTO facts (ancestor_id, person_id, fact_type, date_original, date_year, place, value)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (ancestor_id, person_id, fact_type, date_original, date_year, place, value),
+        )
+
+
+def insert_source(conn: sqlite3.Connection, person_id: str, ancestor_id: str,
+                  title: str | None = None, citation: str | None = None,
+                  record_type: str | None = None, url: str | None = None) -> None:
+    """Insert a source record."""
+    existing = conn.execute(
+        """SELECT id FROM sources WHERE ancestor_id = ? AND person_id = ?
+           AND COALESCE(title,'') = COALESCE(?,'') AND COALESCE(url,'') = COALESCE(?,'')""",
+        (ancestor_id, person_id, title, url),
+    ).fetchone()
+    if not existing:
+        conn.execute(
+            """INSERT INTO sources (ancestor_id, person_id, title, citation, record_type, url)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (ancestor_id, person_id, title, citation, record_type, url),
+        )
 
 
 def get_ancestors(
