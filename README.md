@@ -68,10 +68,12 @@ The person ID is in the URL when viewing someone on FamilySearch:
 
 - Fetches ancestors using breadth-first search (follows both parents at each generation)
 - Each ancestor is inserted directly into `data/family_tree.db` (SQLite)
+- Also captures: spouses/marriages, siblings, facts (residences, occupations, military), source records
 - Geocodes birth/death places using FamilySearch Places API + Nominatim fallback
 - Commits to database every 50 ancestors (crash-safe)
 - Minimal RAM usage — no data accumulated in memory
 - The app reads from the same database, so new ancestors appear on refresh
+- BC dates are properly handled (stored as null year, not shown on timeline)
 
 ### Notes
 
@@ -79,6 +81,17 @@ The person ID is in the URL when viewing someone on FamilySearch:
 - Nominatim geocoding is rate-limited to 1 request/second. Large trees take time.
 - FamilySearch's shared tree can be very deep (40+ generations for European lineages). The scraper will run until it exhausts all parent links.
 - Run `python clean_geocodes.py` after scraping to remove implausible geocode results (e.g., pre-1492 ancestors placed in the Americas).
+- Only run **2 scrapers concurrently** (one per person). Running 4+ causes SQLite lock contention.
+
+### Data Captured Per Ancestor
+
+| Data | Source | Description |
+|------|--------|-------------|
+| Basic info | Person endpoint | Name, gender, birth/death dates and places |
+| Spouses | `/spouses` endpoint | Spouse names, marriage dates and places |
+| Siblings | `familiesAsChild` display | Brother/sister IDs |
+| Facts | `person.facts[]` | Residences, occupations, military, immigration, obituaries |
+| Sources | `/sources` endpoint | Census, military, immigration records |
 
 ## Setting Up Multiple People
 
@@ -115,19 +128,47 @@ python migrate_to_sqlite.py
 
 This reads `data/manifest.json` and imports all referenced JSON files into `data/family_tree.db`.
 
+## Cleaning Geocodes
+
+After scraping, run the geocode cleaner to remove implausible locations:
+
+```bash
+python clean_geocodes.py
+```
+
+This removes:
+- Pre-1492 ancestors geocoded to the Americas or southern hemisphere
+- Pre-600 AD ancestors outside Europe/Middle East/North Africa
+- Non-geographic place strings ("At Sea", "Will", etc.)
+- Birth/death pairs > 3000km apart for pre-1500 ancestors
+
+The cleaner operates directly on the SQLite database. Safe to run multiple times.
+
 ## Features
 
 - **Interactive map** with Leaflet + OpenStreetMap tiles
 - **Marker clustering** for performance with 100k+ ancestors
-- **Timeline slider** to filter by year range
+- **Timeline slider** to filter by year range (200 AD – present)
 - **Ancestor search** with server-side full-text matching
 - **Lineage panel** — click a pin to see the path from you to that ancestor
 - **Birth/death migration lines** — dotted line between birth and death locations
 - **Multiple people** — switch between family trees via dropdown
 - **Common ancestors view** — find and display shared ancestors between people
-- **Notable ancestors panel** — browse titled/royal ancestors
+- **Notable ancestors panel** — browse titled/royal ancestors (Kings, Earls, Sirs, etc.)
 - **Paternal/maternal toggles** — show/hide by lineage side
 - **Live scrape status** — see scraping progress in the app
+
+## Database Schema
+
+```
+ancestors     — Core ancestor data (name, dates, places, geocodes, lineage)
+spouses       — Spouse names and marriage details per ancestor
+siblings      — Sibling relationships
+facts         — Residences, occupations, military service, immigration, etc.
+sources       — Attached source records (census, military, church records)
+geocache      — Cached geocoding results (place string → lat/lng)
+people        — Person entries (who's tree is being tracked)
+```
 
 ## Running Tests
 
@@ -137,7 +178,7 @@ pytest tests/ -v
 
 ## Tech Stack
 
-- **Backend:** Python, FastAPI, SQLite, Jinja2
+- **Backend:** Python 3.11+, FastAPI, SQLite (WAL mode), Jinja2
 - **Frontend:** Leaflet.js, Leaflet.markercluster, noUiSlider, vanilla JS
 - **Geocoding:** FamilySearch Places API + Nominatim/OpenStreetMap
-- **Data:** SQLite with WAL mode for concurrent read/write
+- **Data:** SQLite with WAL mode, 30s busy timeout for concurrent access

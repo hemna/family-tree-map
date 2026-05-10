@@ -15,9 +15,17 @@
     </div>
     <div id="lineage-chain"></div>
 </div>
+<div id="notable-panel" style="display:none;">
+    <div id="notable-header">
+        <span id="notable-title">Notable Ancestors</span>
+        <button id="notable-close" onclick="document.getElementById('notable-panel').style.display='none'">✕</button>
+    </div>
+    <div id="notable-content"></div>
+</div>
 <div id="scrape-bar" style="display:none;"></div>
 <div id="search-box">
     <input type="text" id="search-input" placeholder="Search ancestors..." autocomplete="off">
+    <button id="search-clear" style="display:none;" onclick="document.getElementById('search-input').value='';document.getElementById('search-results').style.display='none';this.style.display='none';">✕</button>
     <div id="search-results" style="display:none;"></div>
 </div>
 <div id="controls">
@@ -42,8 +50,9 @@
         <input type="checkbox" id="show-maternal" checked> Maternal
     </label>
     <label class="toggle-label">
-        <input type="checkbox" id="show-unknown" checked> Unknown dates
+        <input type="checkbox" id="show-unknown"> Unknown dates
     </label>
+    <button class="btn-small" id="notable-btn" onclick="toggleNotablePanel()">Notable</button>
     {% if not static_mode %}
     <a href="/select-lineage" class="btn-small">Change Lineage</a>
     <a href="/logout" class="btn-small">Logout</a>
@@ -61,5 +70,5 @@
 <script>
     const CURRENT_PERSON_ID = "{{ current_person_id }}";
 </script>
-<script src="/static/js/map.js?v=14"></script>
+<script src="/static/js/map.js?v=18"></script>
 {% endblock %}

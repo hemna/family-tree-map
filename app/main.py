@@ -171,7 +171,6 @@ async def api_ancestors_meta(person_id: str):
 
     if person_id == "common":
         people_ids = list(PEOPLE.keys())
-        # Count common ancestors
         placeholders = ",".join(["?"] * len(people_ids))
         cursor = conn.execute(
             f"""SELECT COUNT(DISTINCT id) FROM (
@@ -194,6 +193,53 @@ async def api_ancestors_meta(person_id: str):
     year_min, year_max = get_year_range(conn, person_id)
     conn.close()
     return JSONResponse({"count": count, "year_min": year_min, "year_max": year_max})
+
+
+@app.get("/api/ancestors/{person_id}/notable")
+async def api_notable_ancestors(person_id: str):
+    """Return notable/titled ancestors for a person."""
+    conn = get_connection()
+
+    if person_id not in PEOPLE and person_id != "common":
+        conn.close()
+        return JSONResponse([])
+
+    # Query for ancestors with titles in their names
+    titles = ['King', 'Queen', 'Duke', 'Duchess', 'Earl', 'Count', 'Countess',
+              'Baron', 'Baroness', 'Lord', 'Lady', 'Sir', 'Prince', 'Princess',
+              'Emperor', 'Empress', 'Colonel', 'Captain', 'General']
+
+    target_person_id = person_id if person_id != "common" else list(PEOPLE.keys())[0]
+
+    # Build LIKE clauses for each title
+    like_clauses = " OR ".join([f"name LIKE ?" for _ in titles])
+    params = [target_person_id] + [f"{t} %" for t in titles] + [f"% {t} %" for t in titles]
+    like_clauses_full = " OR ".join([f"name LIKE ?" for _ in titles] + [f"name LIKE ?" for _ in titles])
+
+    cursor = conn.execute(
+        f"""SELECT * FROM ancestors
+            WHERE person_id = ? AND ({like_clauses_full})
+            ORDER BY generation
+            LIMIT 100""",
+        params,
+    )
+
+    results = []
+    for row in cursor.fetchall():
+        r = dict(row)
+        results.append({
+            "name": r["name"],
+            "relationship": r["relationship"],
+            "generation": r["generation"],
+            "birth_year": r["birth_date_year"],
+            "birth_place": r["birth_place"],
+            "death_year": r["death_date_year"],
+            "familysearch_url": r["familysearch_url"],
+            "id": r["id"],
+        })
+
+    conn.close()
+    return JSONResponse(results)
 
 
 @app.get("/api/search/{person_id}")

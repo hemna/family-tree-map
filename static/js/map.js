@@ -421,11 +421,20 @@
         if (toAdd.length > 0) clusterGroup.addLayers(toAdd);
 
         var visibleCount = 0;
+        var unknownCount = 0;
         allMarkers.forEach(function(m) {
-            if (clusterGroup.hasLayer(m)) visibleCount++;
+            if (clusterGroup.hasLayer(m)) {
+                visibleCount++;
+                if (m._ancestorData.year === null || m._ancestorData.year === undefined) {
+                    unknownCount++;
+                }
+            }
         });
-        document.getElementById('ancestor-count').textContent =
-            Math.round(visibleCount / 2) + ' ancestors visible (of ' + ANCESTORS.length + ')';
+        var countText = Math.round(visibleCount / 2) + ' ancestors visible (of ' + ANCESTORS.length + ')';
+        if (unknownCount > 0) {
+            countText += ' [' + Math.round(unknownCount / 2) + ' undated]';
+        }
+        document.getElementById('ancestor-count').textContent = countText;
     }
 
     // Debounce slider updates for smoother performance
@@ -479,6 +488,7 @@
     // Search functionality
     var searchInput = document.getElementById('search-input');
     var searchResults = document.getElementById('search-results');
+    var searchClear = document.getElementById('search-clear');
     var searchTimeout = null;
 
     // Build marker lookup by ancestor ID for zooming
@@ -492,6 +502,9 @@
     searchInput.addEventListener('input', function() {
         if (searchTimeout) clearTimeout(searchTimeout);
         var query = searchInput.value.trim();
+
+        // Show/hide clear button
+        searchClear.style.display = query.length > 0 ? 'block' : 'none';
 
         if (query.length < 2) {
             searchResults.style.display = 'none';
@@ -581,6 +594,67 @@
             searchResults.style.display = 'block';
         }
     });
+
+    // Notable ancestors panel
+    window.toggleNotablePanel = function() {
+        var panel = document.getElementById('notable-panel');
+        if (panel.style.display === 'block') {
+            panel.style.display = 'none';
+            return;
+        }
+
+        var content = document.getElementById('notable-content');
+        content.innerHTML = '<div class="notable-loading">Loading notable ancestors...</div>';
+        panel.style.display = 'block';
+
+        fetch('/api/ancestors/' + CURRENT_PERSON_ID + '/notable')
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.length === 0) {
+                    content.innerHTML = '<div class="notable-loading">No titled ancestors found.</div>';
+                    return;
+                }
+
+                var html = '<div style="padding:0.3rem 0.75rem;color:#666;font-size:0.75rem;border-bottom:1px solid #eee;">' + data.length + ' notable ancestors found</div>';
+
+                data.forEach(function(a) {
+                    var years = '';
+                    if (a.birth_year) years += 'b. ' + a.birth_year;
+                    if (a.death_year) years += (years ? ' · ' : '') + 'd. ' + a.death_year;
+                    var place = a.birth_place || '';
+                    var detail = [a.relationship, years, place].filter(Boolean).join(' · ');
+
+                    html += '<div class="notable-item" data-id="' + a.id + '">';
+                    html += '<div class="notable-name"><a href="' + a.familysearch_url + '" target="_blank">' + a.name + '</a></div>';
+                    html += '<div class="notable-detail">' + detail + '</div>';
+                    html += '</div>';
+                });
+
+                content.innerHTML = html;
+
+                // Add click handlers to zoom to ancestor
+                content.querySelectorAll('.notable-item').forEach(function(item) {
+                    item.addEventListener('click', function(e) {
+                        if (e.target.tagName === 'A') return; // Don't intercept link clicks
+                        var ancestorId = item.getAttribute('data-id');
+                        var markers = markersByAncestorId[ancestorId];
+                        if (markers && markers.length > 0) {
+                            var m = markers[0];
+                            var latlng = m.getLatLng();
+                            map.setView(latlng, 10);
+                            clusterGroup.zoomToShowLayer(m, function() {
+                                m.openPopup();
+                            });
+                        }
+                        drawMigrationLine(ancestorId, 'birth');
+                        showLineagePanel(ancestorId);
+                    });
+                });
+            })
+            .catch(function() {
+                content.innerHTML = '<div class="notable-loading">Failed to load notable ancestors.</div>';
+            });
+    };
 
     } // end initMap
 })();

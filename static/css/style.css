@@ -194,6 +194,98 @@ p {
     font-size: 0.8rem;
 }
 
+/* Notable ancestors panel */
+#notable-panel {
+    position: fixed;
+    top: 60px;
+    right: 300px;
+    width: 380px;
+    max-height: calc(100vh - 160px);
+    background: rgba(255, 255, 255, 0.97);
+    border-radius: 8px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.2);
+    z-index: 1500;
+    overflow-y: auto;
+    font-size: 0.85rem;
+}
+
+#notable-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid #eee;
+    position: sticky;
+    top: 0;
+    background: white;
+    border-radius: 8px 8px 0 0;
+}
+
+#notable-title {
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+#notable-close {
+    background: none;
+    border: none;
+    font-size: 1.1rem;
+    cursor: pointer;
+    color: #666;
+    padding: 0 0.3rem;
+}
+
+#notable-close:hover {
+    color: #000;
+}
+
+#notable-content {
+    padding: 0.5rem;
+}
+
+.notable-item {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid #f0f0f0;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.notable-item:last-child {
+    border-bottom: none;
+}
+
+.notable-item:hover {
+    background: #f0faf5;
+}
+
+.notable-name {
+    font-weight: 600;
+    color: #1a1a1a;
+    font-size: 0.85rem;
+}
+
+.notable-name a {
+    color: #1a1a1a;
+    text-decoration: none;
+}
+
+.notable-name a:hover {
+    color: #2d6a4f;
+    text-decoration: underline;
+}
+
+.notable-detail {
+    color: #666;
+    font-size: 0.75rem;
+    margin-top: 0.15rem;
+}
+
+.notable-loading {
+    text-align: center;
+    padding: 2rem;
+    color: #666;
+}
+
 /* Side-by-side lineage for common ancestors */
 .lineage-side-by-side {
     display: flex;
@@ -273,13 +365,30 @@ p {
 
 #search-input {
     width: 100%;
-    padding: 0.5rem 0.75rem;
+    padding: 0.5rem 2rem 0.5rem 0.75rem;
     border: 1px solid #ccc;
     border-radius: 6px;
     font-size: 0.85rem;
     background: rgba(255, 255, 255, 0.97);
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
     outline: none;
+}
+
+#search-clear {
+    position: absolute;
+    right: 8px;
+    top: 8px;
+    background: none;
+    border: none;
+    font-size: 1rem;
+    cursor: pointer;
+    color: #999;
+    padding: 0 4px;
+    line-height: 1;
+}
+
+#search-clear:hover {
+    color: #333;
 }
 
 #search-input:focus {
